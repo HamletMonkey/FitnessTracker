@@ -1,0 +1,985 @@
+---
+title: "CaseStudy2 Bellabeat Smart Device"
+author: "Hennyfercity L"
+date: "7/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Setting up the environment
+
+```{r install packages}
+install.packages("tidyverse")
+install.packages("lubridate")
+install.packages("skimr")
+install.packages("janitor")
+
+```
+Loading packages
+
+```{r loading packages}
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(ggplot2)
+
+```
+checking the first five dataset - as per Kaggle description
+
+```{r load 5 datasets}
+daily_activity_raw <- read.csv("dailyActivity_merged.csv")
+daily_sleep_raw <-read.csv("sleepDay_merged.csv")
+heartrate_s_raw <- read.csv("heartrate_seconds_merged.csv")
+weight_log_raw <- read.csv("weightLogInfo_merged.csv")
+mets_mins_raw <- read.csv("minuteMETsNarrow_merged.csv")
+
+```
+inspecting the data...
+
+```{r inspecting data}
+glimpse(daily_activity_raw)
+summary(daily_activity_raw)
+
+glimpse(daily_sleep_raw)
+summary(daily_sleep_raw)
+
+glimpse(heart_rate_raw)
+summary(heart_rate_raw)
+
+glimpse(weight_log_raw)
+summary(weight_log_raw)
+
+glimpse(mets_mins_raw)
+summary(mets_mins_raw)
+
+```
+From both the `glimpse()` and `summary()` function, the dimension of these data sets are different, i.e the number of records are different, which led us thinking: Do all individuals record everything? If not, what features do they mainly use? On the other side, we could also see that the "daily_activity_raw" is a merged data frame containing data of daily steps and calories count, which would be a good start off point for us. But before that, we will find out how exactly are the smart device used.
+
+## Data Processing
+First, we'll clean each data sets before further processing them.
+
+1. daily activity data
+
+```{r checking duplicate daily activity}
+#checking for any duplicated rows and missing value -- result in none
+daily_activity_raw[duplicated(daily_activity_raw),]
+colSums(is.na(daily_activity_raw))
+
+```
+```{r cleaning daily activity}
+#cleaning and organizing the data
+daily_activity <- daily_activity_raw %>%
+  clean_names() %>%
+  rename(moderately_active_minutes = fairly_active_minutes)%>%
+  rename(date = activity_date) %>% 
+  mutate(date = mdy(date))
+
+```
+2. daily sleep data
+
+```{r checking duplicate daily sleep}
+#checking for any duplicated rows and missing value -- result in 3 rows
+daily_sleep_raw[duplicated(daily_sleep_raw),]
+colSums(is.na(daily_sleep_raw))
+
+```
+```{r remove duplicate daily sleep}
+#remove duplicated data
+daily_sleep <- daily_sleep_raw[!duplicated(daily_sleep_raw),]
+
+```
+```{r cleaning daily sleep}
+#clean and organizing the data
+daily_sleep <- daily_sleep %>%
+  clean_names() %>%
+  separate(sleep_day, into = c("date","time"), sep = " ") %>% 
+  mutate(date = mdy(date)) %>%
+  #time is removed as it is irrelevant
+  select(-time)
+
+```
+3. heart rate data
+
+```{r checking duplicate heart rate (secs)}
+#checking for any duplicated rows and missing value -- result in none
+heartrate_s_raw[duplicated(heartrate_s_raw),]
+colSums(is.na(heartrate_s_raw))
+
+```
+```{r cleaning heart rate (secs)}
+#cleaning and organizing the data
+heartrate_s <- heartrate_s_raw %>%
+  clean_names() %>%
+  rename(date_time = time) %>% 
+  mutate(date_time = mdy_hms(date_time))
+
+```
+4. weight log data
+
+From the function `glimpse()`performed earlier, we find out that there are a lot of missing values in weight log data, mainly in the column "fats". There are only 2 records, hence we will remove them as they are considered irrelevant.
+
+```{r checking duplicate weight log}
+#checking for any duplicated rows -- result in none
+weight_log_raw[duplicated(weight_log_raw),]
+
+```
+```{r cleaning weight log}
+#cleaning and organizing the data
+weight_log <- weight_log_raw %>%
+  clean_names() %>%
+  separate(date, into = c("date","time"), sep=" ") %>% 
+  mutate(date = mdy(date)) %>% 
+  #time of record, fat and log id are removed as it is irrelevant
+  select(c(1,2,4,5,7,8))
+
+```
+5. METs per minutes data
+
+```{r checking METs (mins)}
+#checking for any duplicated rows -- result in none
+mets_mins_raw[duplicated(mets_mins_raw),]
+colSums(is.na(mets_mins_raw))
+
+```
+```{r cleaning METs (mins)}
+#cleaning and organizing the dat
+mets_mins <- mets_mins_raw %>%
+  clean_names() %>% 
+  rename(date_time = activity_minute) %>% 
+  rename(mets_value = me_ts) %>% 
+  mutate(date_time = mdy_hms(date_time))
+
+```
+## Data Analyzing
+###How are people using the smart device? What features do people use the most and least?
+Here we figure out how many distinct id were found in each data sets, which reflects on how many individuals were using each features.
+
+```{r unique id count}
+#figure out distinct id
+n_distinct(daily_activity$id)
+n_distinct(daily_sleep$id)
+n_distinct(heartrate_s$id)
+n_distinct(weight_log$id)
+n_distinct(mets_mins$id)
+
+```
+### Who tracks what?
+By now, we can tell that the smart device's default features inclusive of: active minutes/ levels, distance traveled, number of steps and calories burned. There are a total of 33 records indicating the total number of individuals these data collected from, and not all of them an active user of the existing features. Let's look into this!
+
+```{r install and load venn diagram package}
+install.packages("VennDiagram")
+library(VennDiagram)
+
+```
+```{r list of unique id}
+#create lists of unique id for each features
+sleep_unique_id <- unique(daily_sleep$id)
+heartrate_unique_id <-unique(heartrate_s$id)
+weightlog_unique_id <- unique(weight_log$id)
+
+```
+```{r venn diagram}
+#combine the lists of unique id to create venn diagram
+x <- list(sleep_unique_id, heartrate_unique_id, weightlog_unique_id)
+venn <- venn.diagram(x,
+             category.names = c("sleep (24)", "heart rate (14)", "weight log (8)"),
+             filename = NULL,
+             main="What features do people use?", main.fontfamily = "sans",
+             main.cex = 2, margin=0.05,
+             lwd = 0.5, fill = c("skyblue", "tomato", "lightgoldenrod1"),
+             cex = 1, fontface = "bold", fontfamily = "sans", 
+             cat.cex = 1, cat.fontface = "bold", cat.fontfamily = "sans",
+             cat.default.pos= "outer")
+grid.newpage()
+grid.draw(venn)
+
+```
+From the Venn diagram created, there are only 3 out of 33 people who utilized all the main features of the smart device; and there is only 1 who did not use any of these features other than the smart device's default features. Another point to note: about half (16 out of 33) of the people monitored their sleep and heart rate.
+
+Next question is *how often do they use these features within a month*?
+
+```{r days vs. features}
+#for daily activity merged
+activity_n_days <- daily_activity %>% 
+  group_by(id) %>% 
+  summarise(n_active=n_distinct(`date`)) ##see if this work
+#for daily sleep
+sleep_days <- daily_sleep %>% 
+  group_by(id) %>% 
+  summarise(n_sleep=n_distinct(`date`))
+#for heart rate record
+heartrate_days <- heartrate_s %>% 
+  group_by(id) %>% 
+  summarise(n_heartrate=n_distinct(date(date_time)))
+##for weight log
+weight_log_days <- weight_log %>% 
+  group_by(id) %>% 
+  summarise(n_weight=n_distinct(`date`))
+
+```
+```{r days vs. features-left join}
+#perform left join to get total number of days for each feature
+recorded_days <- activity_n_days %>% 
+  left_join(sleep_days, by=c("id"="id")) %>% 
+              left_join(heartrate_days, by=c("id"="id")) %>%
+  left_join(weight_log_days, by=c("id"="id"))
+#inspecting the dataframe created
+head(recorded_days)
+
+```
+```{r days vs. features-wide to long}
+#transform data from wide to long to produce bar chart
+recorded_days$id <- factor(recorded_days$id)
+data_long <- recorded_days %>% 
+  gather(recorded_days, type_of_record, days, n_active:n_weight, factor_key = TRUE) %>% 
+  arrange(id)
+
+```
+```{r install packages-stacked bar chart}
+install.packages("ggpubr")
+install.packages("ggsci")
+
+```
+```{r load packages-stacked bar chart}
+library(ggpubr)
+library(ggsci)
+
+```
+```{r days vs. features-stacked bar chart}
+ggplot(data_long, mapping=aes(fill=type_of_record, x=id, y=days)) +
+geom_bar(stat="identity") +
+  geom_text(aes(label=days), position = position_stack(vjust= 0.5),
+            colour = "white", size = 3) + coord_flip() +
+  labs(title="Number of Days Recorded in using Each Features",
+         x="individual record", y="accumulated number of days",
+       subtitle="Each row shows the total number of days a participant successfully logged for each features,
+within the period of 31 days.") +
+  theme_gray()+
+  theme(plot.title = element_text(size=26,face="bold"),
+        plot.subtitle=element_text(size=14),
+        axis.title=element_text(size=16),
+        axis.text=element_text(size=12),
+        axis.text.x = element_text(angle = 45, hjust=1),
+        axis.text.y= element_blank(),
+        axis.ticks.y= element_blank()) +
+  scale_fill_jama(name = "Type of Features",
+                  labels = c("daily activity", "sleep monitoring",
+                             "heart rate monitoring", "weight log"))
+
+```
+Looking from the graph, most of the participants had put on their smart device throughout the period of 31 days.
+
+```{r activity record lesser than 21days}
+nrow(recorded_days %>% filter(activity_n_days <= 21))
+
+```
+### Number of Days Recorded for Each Feature
+Let's find out for the rest of the features, *how frequent are they recorded within a month*?
+By looking at the total number of days the individual feature was used, we are splitting it into 3 main groups:
+
+- less than 10 days
+- between 11-20 days
+- more than 21 days
+
+```{r row name for data frame}
+days_of_usage <- c("less than 10 days", "between 11-20 days","more than 21 days")
+
+```
+Here we are producing a pie chart showing the number of days recorded for the usage of the sleep monitoring feature.
+
+```{r sleep/pie chart/data frame}
+sleep_day_count <- c(
+  n_distinct(sleep_days %>% filter(n_sleep <=10)),
+  n_distinct(sleep_days %>% filter(n_sleep >=11, n_sleep<=20)),
+  n_distinct(sleep_days %>% filter(n_sleep >=21))
+  )
+#creating the data frame for pie chart - sleep monitoring
+sleep_day_perc <- data.frame(days_of_usage, sleep_day_count)
+sleep_day_perc <- sleep_day_perc %>% 
+  mutate(perc=round(sleep_day_count/ sum(sleep_day_count) * 100),1)
+print(sleep_day_perc)
+
+```
+```{r sleep monitoring pie chart}
+sleep_day_perc$days_of_usage <- 
+factor(sleep_day_perc$days_of_usage, levels = c("less than 10 days", "between 11-20 days", "more than 21 days"))
+
+p <- sleep_day_perc %>% 
+  ggplot() + theme_bw()+
+  geom_bar(aes(x=" ", y=perc, fill=days_of_usage),stat="identity", colour="white")+
+  coord_polar("y", start =0) +
+  labs(title="Number of Days Recorded for Sleep Monitoring",
+       subtitle="This is based on the 24 individuals who used the sleep monitoring feature.") +
+  theme(plot.title = element_text(size=20,face="bold"),
+        plot.subtitle=element_text(size=12),
+        axis.title = element_blank(),
+        axis.text = element_blank(), axis.ticks = element_blank(),
+        panel.grid = element_blank(), panel.border = element_blank()) +
+  scale_fill_locuszoom(name = "total number of days") +
+  geom_text(aes(x=" ", y= ypos, label= paste0(perc, "%")), size=5)
+
+ypos <- cumsum(sleep_day_perc$perc) - 0.5*(sleep_day_perc$perc)
+ypos <- 100-ypos
+
+print(p)
+
+```
+We will do the same for the heart rate monitoring feature of the smart device.
+
+```{r heart rate/pie chart/data frame}
+heartrate_day_count <- c(
+  n_distinct(heartrate_days %>% filter(n_heartrate <=10)),
+  n_distinct(heartrate_days %>% filter(n_heartrate >=11, n_heartrate<=20)),
+  n_distinct(heartrate_days %>% filter(n_heartrate >=21))
+)
+print(heartrate_day_count)
+
+heartrate_day_perc <- data.frame(days_of_usage, heartrate_day_count)
+heartrate_day_perc <- heartrate_day_perc %>% 
+  mutate(perc=round(heartrate_day_count/ sum(heartrate_day_count) * 100,1))
+View(heartrate_day_perc)
+
+```
+```{r heart rate monitoring pie chart}
+q <- heartrate_day_perc %>% 
+  ggplot() + theme_bw()+
+  geom_bar(aes(x=" ", y=perc, fill=days_of_usage),stat="identity", colour="white")+
+  coord_polar("y", start =0) +
+  labs(title="Number of Days Recorded for Heart Rate Monitoring",
+       subtitle="This is based on the 14 individuals who used the heart rate monitoring feature.") +
+  theme(plot.title = element_text(size=20,face="bold"),
+        plot.subtitle=element_text(size=12),
+        axis.title = element_blank(),
+        axis.text = element_blank(), axis.ticks = element_blank(),
+        panel.grid = element_blank(), panel.border = element_blank()) +
+  scale_fill_locuszoom(name = "total number of days") +
+  geom_text(aes(x=" ", y=ypos_q, label=paste0(perc, "%")), size=5)
+
+ypos_q <- cumsum(heartrate_day_perc$perc) - 0.5*(heartrate_day_perc$perc)
+ypos_q <- 100-ypos_q
+
+print(q)
+
+```
+Moving on to weight log
+
+```{r weight log/pie chart/data frame}
+weight_day_count <- c(
+  n_distinct(weight_log_days %>% filter(n_weight <=10)),
+  n_distinct(weight_log_days %>% filter(n_weight >=11, n_weight<=20)),
+  n_distinct(weight_log_days %>% filter(n_weight >=21))
+)
+
+weight_day_perc <- data.frame(days_of_usage, weight_day_count)
+weight_day_perc <- weight_day_perc %>% 
+  mutate(perc=round(weight_day_count/ sum(weight_day_count)*100,1))
+View(weight_day_perc)
+
+```
+```{r weight log pie chart}
+r <- weight_day_perc %>% 
+  ggplot() + theme_bw()+
+  geom_bar(aes(x=" ", y=perc, fill=days_of_usage),stat="identity", colour="white")+
+  coord_polar("y", start =0) +
+  labs(title="Number of Days Recorded for Weight Log",
+       subtitle="This is based on the 8 individuals who used the weight log feature.") +
+  theme(plot.title = element_text(size=20,face="bold"),
+        plot.subtitle = element_text(size=12),
+        axis.title = element_blank(),
+        axis.text = element_blank(), axis.ticks = element_blank(),
+        panel.grid = element_blank(), panel.border = element_blank()) +
+  scale_fill_locuszoom(name = "total number of days") +
+  geom_text(aes(x = " ", y = ypos_r, label=paste0(perc, "%")), size=5)
+
+#to avoid r arranges visual and legend in ascending order
+weight_day_perc$days_of_usage <- 
+factor(weight_day_perc$days_of_usage, levels = c("less than 10 days", "between 11-20 days", "more than 21 days"))
+
+ypos_r <- cumsum(weight_day_perc$perc) - 0.5*(weight_day_perc$perc)
+ypos_r <- 100-ypos_r
+
+print(r)
+
+```
+The weight log feature is the least popular among the group and out of the 8 individuals who used it, only 2 consistently using it more than 21 days throughout the 31 days period.
+The main reason people are not using the weight log feature is due to the need of manually inputting it. There are only 3 individuals who reported to have done it automatically.
+
+```{r count weight manual report}
+count(weight_log, c("id", "is_manual_report"))
+
+```
+### How active are they? Is there any trend?
+Here, we will be looking into the group's active level (intensities of activity). There are 4 different types of active level presented, namely:
+
+1. very active
+2. moderately active
+3. lightly active
+4. sedentary minutes
+
+We are comparing each active minutes recorded throughout a week, to identify which day(s) in particular people are more active.
+
+```{r subset intensities duration}
+intensities_duration <- daily_activity %>% 
+  mutate(day= wday(`date`, label=TRUE, abbr=TRUE)) %>% 
+  select(c(1,2,16,11,12,13)) %>% 
+  group_by(day) %>% 
+  summarise(total_very_active = round(sum(very_active_minutes/60),0),
+            total_moderately_active = round(sum(moderately_active_minutes/60),0),
+            total_lightly_active = round(sum(lightly_active_minutes/60),0))
+#inspect intensities duration
+head(intensities_duration)
+
+```
+```{r intensities duration wide to long}
+#transform data from wide to long to produce bar chart
+intensities_duration_long <- gather(intensities_duration, type_of_activity,
+                                    hours, total_very_active:total_lightly_active,
+                                    factor_key = TRUE)
+
+```
+```{r plotting intensities duration stacked bar chart}
+ggplot(intensities_duration_long, 
+       mapping=aes(fill=type_of_activity, x=day, y=hours)) + 
+  geom_bar(stat="identity") +
+  geom_text(aes(label=hours), position = position_stack(vjust= 0.5),
+            colour = "white", size = 3) +
+  scale_fill_jama(name = "Active Level",
+                  labels = c("very active",
+                             "moderately active",
+                             "lightly active")) +
+  labs(title="Active Hours Recorded per Weekday",
+       x="weekday", y="total number of hours") +
+  theme(plot.title = element_text(size=22,face="bold"),
+        axis.title=element_text(size=14),
+        axis.text=element_text(size=10))
+
+```
+Looking into the active distance recorded in comparison
+
+```{r subset intensities distance}
+intensities_distance <- daily_activity %>% 
+  mutate(day= wday(`date`, label=TRUE, abbr=TRUE)) %>% 
+  select(c(1,2,16,7,8,9)) %>% 
+  group_by(day) %>% 
+  summarise(total_very_active = round(sum(very_active_distance),0),
+            total_moderately_active = round(sum(moderately_active_minutes),0),
+            total_lightly_active = round(sum(lightly_active_minutes),0))
+
+```
+```{r intensities distance from wide to long}
+intensities_distance_long <- gather(intensities_distance, type_of_activity,
+                                    distance, total_very_active:total_lightly_active, factor_key = TRUE)
+
+```
+```{r plotting intensities distance stacked bar chart}
+ggplot(intensities_distance_long, 
+       mapping=aes(fill=type_of_activity, x=day, y=distance)) + 
+  geom_bar(stat="identity") +
+  geom_text(aes(label=distance), position = position_stack(vjust= 0.5),
+            colour = "white", size = 3) +
+  scale_fill_jama(name = "Active Level",
+                  labels = c("very active",
+                             "moderately active",
+                             "lightly active")) +
+  labs(title="Active Distance Recorded per Weekday",
+       x="weekday", y="total distance") +
+  theme(plot.title = element_text(size=22,face="bold"),
+        axis.title=element_text(size=14),
+        axis.text=element_text(size=10))
+
+```
+
+From both of the plots, here are the findings:
+ - Tuesday has both the highest active minutes and active distance recorded, followed by Wednesday
+ - Sunday has the least as it's generally the rest day for everyone
+ - amount of active minutes recorded: lightly active > very active > moderately active
+
+### How are these active minutes captured? What are they based on?
+According to fitbit's [official website](https://help.fitbit.com/articles/en_US/Help_article/1379.htm) active minutes are measured with metabolic equivalents (METs).
+It factors in body mass, is used to estimate exercise intensity. METs are calculated through a ratio of working metabolic rate relative to resting metabolic rate.Hence it is used to indicate the intensity of an exercise or activity. When we are at rest, the energy expended is considered 1 MET, hence activity that recorded 5 METs, simply means the particular activity exerted 5 times of energy as compared to at rest.
+
+Here, we are to find out if there's any trend findings from our METs data:
+- for this we will look into how the METs value recorded differ in a day
+- calculate the mean METs value hourly for each individual, within this 31 days
+- assuming that their living/activity patterns shouldn't be fluctuating much
+
+```{r hourly mean MET value}
+#hourly average MET value of each individual throughout the 31 days
+mets_12mn_mean <- mets_mins %>%
+  filter(hour(date_time)==0) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  #for easy identification
+  rowid_to_column("ID")
+
+mets_1h_mean <- mets_mins %>%
+  filter(hour(date_time)==1) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_2h_mean <- mets_mins %>%
+  filter(hour(date_time)==2) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_3h_mean <- mets_mins %>%
+  filter(hour(date_time)==3) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_4h_mean <- mets_mins %>%
+  filter(hour(date_time)==4) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_5h_mean <- mets_mins %>%
+  filter(hour(date_time)==5) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_6h_mean <- mets_mins %>%
+  filter(hour(date_time)==6) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_7h_mean <- mets_mins %>%
+  filter(hour(date_time)==7) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_8h_mean <- mets_mins %>%
+  filter(hour(date_time)==8) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_9h_mean <- mets_mins %>%
+  filter(hour(date_time)==9) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_10h_mean <- mets_mins %>%
+  filter(hour(date_time)==10) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_11h_mean <- mets_mins %>%
+  filter(hour(date_time)==11) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_12h_mean <- mets_mins %>%
+  filter(hour(date_time)==12) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_13h_mean <- mets_mins %>%
+  filter(hour(date_time)==13) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_14h_mean <- mets_mins %>%
+  filter(hour(date_time)==14) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_15h_mean <- mets_mins %>%
+  filter(hour(date_time)==15) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_16h_mean <- mets_mins %>%
+  filter(hour(date_time)==16) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_17h_mean <- mets_mins %>%
+  filter(hour(date_time)==17) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_18h_mean <- mets_mins %>%
+  filter(hour(date_time)==18) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_19h_mean <- mets_mins %>%
+  filter(hour(date_time)==19) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_20h_mean <- mets_mins %>%
+  filter(hour(date_time)==20) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_21h_mean <- mets_mins %>%
+  filter(hour(date_time)==21) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_22h_mean <- mets_mins %>%
+  filter(hour(date_time)==22) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+mets_23h_mean <- mets_mins %>%
+  filter(hour(date_time)==23) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(mets_value = mean(mets_value)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+```
+```{r METs value/merging all data into long data}
+mets_mean_long <-
+  rbind(mets_12mn_mean, mets_1h_mean,mets_2h_mean,
+        mets_3h_mean, mets_4h_mean, mets_5h_mean,
+        mets_6h_mean, mets_7h_mean, mets_8h_mean,
+        mets_9h_mean, mets_10h_mean, mets_11h_mean,
+        mets_12h_mean, mets_13h_mean, mets_14h_mean,
+        mets_15h_mean, mets_16h_mean, mets_17h_mean,
+        mets_18h_mean, mets_19h_mean, mets_20h_mean,
+        mets_21h_mean, mets_22h_mean, mets_23h_mean)
+
+```
+```{r mean METs value-scatter plot}
+ggplot(mets_mean_long) + geom_point(mapping=aes(x=hour, y=mets_value), 
+                                    colour="purple", alpha=0.4) +
+  labs(title="Average METs Value Recorded through a Day",
+       x="time", y="METs value",
+       subtitle="This graph shows the average METs value of each individual around the clock,
+throughout the period of 31 days.") +
+  scale_x_continuous(name="time", breaks=c(0:23), 
+                     labels =c("0000hr","0100hr","0200hr","0300hr",
+                               "0400hr","0500hr","0600hr","0700hr",
+                               "0800hr","0900hr","1000hr","1100hr",
+                               "1200hr","1300hr","1400hr","1500hr",
+                               "1600hr","1700hr","1800hr","1900hr",
+                               "2000hr","2100hr","2200hr","2300hr")) +
+  theme_gray()+
+  theme(plot.title = element_text(size=26,face="bold"),
+        plot.subtitle=element_text(size=14),
+        axis.text.x = element_text(angle = 45, hjust=1),
+        axis.title=element_text(size=16),
+        axis.text=element_text(size=12))
+
+```
+From the graph, here are the findings in the METs value recorded:
+- METs value starting to peak from around 1630-1800 hr in the early evening
+- a gradual increase from around 0930-1200hr in the morning
+
+### Is there any relationship between METs value and number of steps?
+```{r loading & preparing hourly steps data}
+steps_hour_raw <- read.csv("hourlySteps_merged.csv")
+#inspecting data
+glimpse(steps_hour_raw)
+summary(steps_hour_raw)
+
+#checking for any duplicated rows and missing value -- result in none
+steps_hour_raw[duplicated(steps_hour_raw),]
+colSums(is.na(steps_hour_raw))
+#ensure that all 33 records included
+n_distinct(steps_hour_raw$Id)
+#clean and organizing the data
+steps_hour <- steps_hour_raw %>%
+  clean_names() %>% 
+  rename(date_time = activity_hour) %>% 
+  rename(steps = step_total) %>% 
+  mutate(date_time = mdy_hms(date_time))
+
+```
+- process it the same as METs value and then we will merge both tables
+
+```{r hourly mean steps}
+steps_12mn_mean <- steps_hour %>%
+  filter(hour(date_time)==0) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_1h_mean <- steps_hour %>%
+  filter(hour(date_time)==1) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_2h_mean <- steps_hour %>%
+  filter(hour(date_time)==2) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_3h_mean <- steps_hour %>%
+  filter(hour(date_time)==3) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_4h_mean <- steps_hour %>%
+  filter(hour(date_time)==4) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_5h_mean <- steps_hour %>%
+  filter(hour(date_time)==5) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_6h_mean <- steps_hour %>%
+  filter(hour(date_time)==6) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_7h_mean <- steps_hour %>%
+  filter(hour(date_time)==7) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_8h_mean <- steps_hour %>%
+  filter(hour(date_time)==8) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_9h_mean <- steps_hour %>%
+  filter(hour(date_time)==9) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_10h_mean <- steps_hour %>%
+  filter(hour(date_time)==10) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_11h_mean <- steps_hour %>%
+  filter(hour(date_time)==11) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_12h_mean <- steps_hour %>%
+  filter(hour(date_time)==12) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_13h_mean <- steps_hour %>%
+  filter(hour(date_time)==13) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_14h_mean <- steps_hour %>%
+  filter(hour(date_time)==14) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_15h_mean <- steps_hour %>%
+  filter(hour(date_time)==15) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_16h_mean <- steps_hour %>%
+  filter(hour(date_time)==16) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_17h_mean <- steps_hour %>%
+  filter(hour(date_time)==17) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_18h_mean <- steps_hour %>%
+  filter(hour(date_time)==18) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_19h_mean <- steps_hour %>%
+  filter(hour(date_time)==19) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_20h_mean <- steps_hour %>%
+  filter(hour(date_time)==20) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_21h_mean <- steps_hour %>%
+  filter(hour(date_time)==21) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_22h_mean <- steps_hour %>%
+  filter(hour(date_time)==22) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+steps_23h_mean <- steps_hour %>%
+  filter(hour(date_time)==23) %>% 
+  group_by(id, hour(date_time)) %>% 
+  summarise(steps = mean(steps)) %>% 
+  rename(hour = `hour(date_time)`) %>% 
+  rowid_to_column("ID")
+
+```
+```{r steps/merging all data into long data}
+steps_mean_long <-
+  rbind(steps_12mn_mean, steps_1h_mean, steps_2h_mean,
+        steps_3h_mean, steps_4h_mean, steps_5h_mean,
+        steps_6h_mean, steps_7h_mean, steps_8h_mean,
+        steps_9h_mean, steps_10h_mean, steps_11h_mean,
+        steps_12h_mean, steps_13h_mean, steps_14h_mean,
+        steps_15h_mean, steps_16h_mean, steps_17h_mean,
+        steps_18h_mean, steps_19h_mean, steps_20h_mean,
+        steps_21h_mean, steps_22h_mean, steps_23h_mean)
+
+```
+```{r METs value left joining steps}
+mets_steps_long <- left_join(mets_mean_long, steps_mean_long,
+                             by = c("ID"="ID","id"="id","hour"="hour"))
+
+```
+```{r plotting avg. steps vs. avg. METs value}
+#excluding outliers
+outliers <- boxplot(mets_steps_long$steps, plot=FALSE)$out
+mets_steps_long_out <- mets_steps_long[-which(mets_steps_long$steps %in% outliers),]
+#remember to load library
+ggplot(data=mets_steps_long_out, aes(x=steps, y=mets_value)) +
+  geom_point() + 
+  geom_smooth(method="loess", alpha=0.4) +
+  stat_cor(aes(label = ..r.label..), method = "pearson", label.x = 900, label.y = 15) +
+  labs(title="Average Number of Steps vs. Average METs Value (hourly)",
+       x="number of steps", y="METs value",
+       subtitle="This graph shows the relationship between the hourly average number of steps and METs value,
+throughout the period of 31 days.") +
+  theme_gray()+
+  theme(plot.title = element_text(size=26,face="bold"),
+        plot.subtitle=element_text(size=14),
+        axis.title=element_text(size=16),
+        axis.text=element_text(size=12))
+
+```
+From the plot we can derive a positive relationship between the number of steps and the METs value recorded, with a correlation value of 0.9.
+
+.....
+
+## What about sleep patterns?
+We will start off by
+looking into their sleep efficiency, derived from the total asleep hours out of their total time in bed recorded.
+
+```{r sleep efficiency}
+sleep_intensities <- daily_sleep %>% 
+  mutate(asleep_hours = asleep_mins/60,
+            in_bed_hours = in_bed_mins/60,
+            sleep_eff = asleep_hours/in_bed_hours)
+
+ggplot(sleep_intensities, 
+       aes(x=asleep_hours, y=sleep_eff)) +
+  geom_point() +
+  geom_smooth(method='loess')+
+  labs(title="Total Asleep Hours vs. Sleep Efficiency", x="total sleep hours",
+       y="sleep efficiency") +
+  theme(plot.title = element_text(size=18,face='bold'),
+        axis.title.x=element_text(size=12), axis.title.y = element_text(size=12))
+```
+```{r sedentary hours vs. sleep efficiency}
+sleep_intensities_n <- sleep_intensities %>% 
+  left_join(daily_activity,
+            by=c("id"="id","date")) %>% 
+  mutate(sedentary_hours = sedentary_mins/60) %>% 
+  select(c(1,2,5,6,7,21))
+
+ggplot(sleep_intensities_n, 
+       aes(x=sedentary_hours, y=asleep_hours)) +
+  geom_point() +
+  geom_smooth(method='loess') + 
+  labs(title="Sendatary Hours vs. Asleep Hours", x="sendatary hours",
+       y="asleep hours") +
+  theme(plot.title = element_text(size=18,face='bold'),
+        axis.title.x=element_text(size=12), axis.title.y = element_text(size=12))
+```
